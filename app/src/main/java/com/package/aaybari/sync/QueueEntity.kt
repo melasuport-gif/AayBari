@@ -11,5 +11,8 @@ data class QueueEntity(
     @ColumnInfo(name = "doc_id") val docId: String,
     @ColumnInfo(name = "payload_json") val payloadJson: String,
     @ColumnInfo(name = "status") val status: String,
-    @ColumnInfo(name = "created_at") val createdAt: Long
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    // new columns for retry/dead-letter handling
+    @ColumnInfo(name = "attempts") val attempts: Int = 0,
+    @ColumnInfo(name = "last_error") val lastError: String? = null
 )

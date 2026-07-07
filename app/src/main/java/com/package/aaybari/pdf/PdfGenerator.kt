@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.*
 import android.graphics.pdf.PdfDocument
 import android.os.Environment
-import com.package.aaybari.R
+import androidx.core.content.res.ResourcesCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -13,8 +13,9 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * Simple PDF generator for Bill and Ledger. This is a starter implementation — adapt fonts,
- * localization and styling to match your app's requirements.
+ * Simple PDF generator for Bill and Ledger. This updated version will attempt to load
+ * a bundled Bengali font (res/font/noto_sans_bengali.ttf) for better Bengali rendering.
+ * If the font is not available, it falls back to Typeface.DEFAULT.
  */
 object PdfGenerator {
 
@@ -22,15 +23,25 @@ object PdfGenerator {
 
     data class BillItem(val date: String, val description: String, val amount: Double)
 
+    private fun resolveBengaliTypeface(context: Context): Typeface? {
+        return try {
+            // note: add res/font/noto_sans_bengali.ttf to the project to enable
+            ResourcesCompat.getFont(context, com.package.aaybari.R.font.noto_sans_bengali)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     // Generate a single bill PDF (landscape-like small size). Returns saved File or null on error.
     suspend fun generateBill(context: Context, billNumber: String, dateStr: String, items: List<BillItem>, outputFileName: String): File? {
         return withContext(Dispatchers.IO) {
+            var pdfDocument: PdfDocument? = null
             try {
                 // Use bill size: 8.27" x 5.3" (width x height)
                 val width = (8.27f * POINTS_PER_INCH).toInt()
                 val height = (5.3f * POINTS_PER_INCH).toInt()
 
-                val pdfDocument = PdfDocument()
+                pdfDocument = PdfDocument()
                 val pageInfo = PdfDocument.PageInfo.Builder(width, height, 1).create()
                 val page = pdfDocument.startPage(pageInfo)
                 val canvas = page.canvas
@@ -40,6 +51,9 @@ object PdfGenerator {
 
                 val paint = Paint()
                 paint.isAntiAlias = true
+
+                // Try to use bundled Bengali font if available
+                val bengaliTypeface = resolveBengaliTypeface(context)
 
                 // Header: app name and bill title
                 paint.textSize = 18f
@@ -73,7 +87,12 @@ object PdfGenerator {
                 var total = 0.0
                 for (item in items) {
                     canvas.drawText(item.date, col1X.toFloat(), y.toFloat(), paint)
+
+                    // Use Bengali typeface for description/words if available
+                    if (bengaliTypeface != null) paint.typeface = bengaliTypeface else paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                     canvas.drawText(item.description, col2X.toFloat(), y.toFloat(), paint)
+
+                    paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                     canvas.drawText(String.format(Locale.getDefault(), "%.2f", item.amount), col3X.toFloat(), y.toFloat(), paint)
                     y += 16
                     total += item.amount
@@ -86,17 +105,22 @@ object PdfGenerator {
                 y += 30
 
                 // Amount in words (Bangla)
-                val words = BengaliNumberToWords.toWords(total)
-                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                if (bengaliTypeface != null) paint.typeface = bengaliTypeface else paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                 paint.textSize = 11f
+                val words = BengaliNumberToWords.toWords(total)
                 canvas.drawText("Amount (in words): $words", margin.toFloat(), y.toFloat(), paint)
                 y += 40
 
                 // Barcode at bottom
                 val barcodeBitmap = BarcodeHelper.generateCode128Bitmap(billNumber, 600, 80)
-                if (barcodeBitmap != null) {
+                if (barcodeBitmap != null && barcodeBitmap.width > 0 && barcodeBitmap.height > 0) {
                     val bx = (width - barcodeBitmap.width) / 2
-                    canvas.drawBitmap(barcodeBitmap, bx.toFloat(), y.toFloat(), null)
+                    try {
+                        canvas.drawBitmap(barcodeBitmap, bx.toFloat(), y.toFloat(), null)
+                    } catch (e: Exception) {
+                        // fail gracefully if bitmap draw fails
+                        e.printStackTrace()
+                    }
                 }
 
                 pdfDocument.finishPage(page)
@@ -106,14 +130,19 @@ object PdfGenerator {
                 if (!dir.exists()) dir.mkdirs()
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                 val file = File(dir, "${outputFileName}_$timestamp.pdf")
+
                 FileOutputStream(file).use { fos ->
                     pdfDocument.writeTo(fos)
                 }
-                pdfDocument.close()
+
                 file
             } catch (e: Exception) {
                 e.printStackTrace()
                 null
+            } finally {
+                try {
+                    pdfDocument?.close()
+                } catch (_: Exception) { }
             }
         }
     }
@@ -121,13 +150,16 @@ object PdfGenerator {
     // Generate a paginated ledger (A4). Simple starter implementation.
     suspend fun generateLedger(context: Context, title: String, rows: List<BillItem>, outputFileName: String): File? {
         return withContext(Dispatchers.IO) {
+            var pdfDocument: PdfDocument? = null
             try {
                 val width = (8.27f * POINTS_PER_INCH).toInt()
                 val height = (11.69f * POINTS_PER_INCH).toInt()
 
-                val pdfDocument = PdfDocument()
+                pdfDocument = PdfDocument()
                 val paint = Paint()
                 paint.isAntiAlias = true
+
+                val bengaliTypeface = resolveBengaliTypeface(context)
 
                 val margin = (0.5f * POINTS_PER_INCH).toInt()
                 val col1X = margin
@@ -170,7 +202,9 @@ object PdfGenerator {
                     for (i in start until end) {
                         val row = rows[i]
                         canvas.drawText(row.date, col1X.toFloat(), y.toFloat(), paint)
+                        if (bengaliTypeface != null) paint.typeface = bengaliTypeface else paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                         canvas.drawText(row.description, col2X.toFloat(), y.toFloat(), paint)
+                        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                         canvas.drawText(String.format(Locale.getDefault(), "%.2f", row.amount), col3X.toFloat(), y.toFloat(), paint)
                         y += 16
                         total += row.amount
@@ -189,11 +223,12 @@ object PdfGenerator {
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                 val file = File(dir, "${outputFileName}_$timestamp.pdf")
                 FileOutputStream(file).use { fos -> pdfDocument.writeTo(fos) }
-                pdfDocument.close()
                 file
             } catch (e: Exception) {
                 e.printStackTrace()
                 null
+            } finally {
+                try { pdfDocument?.close() } catch (_: Exception) { }
             }
         }
     }

@@ -1,5 +1,4 @@
-// Module-level build.gradle (Groovy) for app module
-// Update versions to match your project if necessary
+// Module-level build.gradle (Groovy) for app module — updated to include ZXing and Gson
 apply plugin: 'com.android.application'
 apply plugin: 'com.google.gms.google-services'
 
@@ -47,6 +46,12 @@ dependencies {
 
     // Google Sign-In (optional, for Drive/Google features later)
     implementation 'com.google.android.gms:play-services-auth:20.7.0'
+
+    // ZXing for barcode generation
+    implementation 'com.google.zxing:core:3.5.1'
+
+    // Gson for JSON utilities
+    implementation 'com.google.code.gson:gson:2.10.1'
 
     // AndroidX
     implementation 'androidx.core:core-ktx:1.12.0'

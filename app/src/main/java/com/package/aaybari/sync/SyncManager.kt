@@ -46,4 +46,15 @@ class SyncManager(private val context: Context, private val db: SyncDatabase) {
         workManager.enqueueUniqueWork("aaybari_sync", ExistingWorkPolicy.KEEP, request)
     }
 
+    /**
+     * Re-enqueue a failed item (reset attempts to 0 and status to PENDING).
+     */
+    suspend fun reenqueueFailed(id: Long) {
+        val dao = db.queueDao()
+        val items = dao.getPending(status = QueueStatus.FAILED.name, limit = 1000)
+        val item = items.find { it.id == id } ?: return
+        val reset = item.copy(status = QueueStatus.PENDING.name, attempts = 0, lastError = null)
+        dao.update(reset)
+        scheduleSync()
+    }
 }

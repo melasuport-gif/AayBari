@@ -10,7 +10,7 @@ interface QueueDao {
     @Insert
     suspend fun insert(entry: QueueEntity): Long
 
-    @Query("SELECT * FROM sync_queue WHERE status = :status ORDER BY created_at ASC LIMIT :limit")
+    @Query("SELECT * FROM sync_queue WHERE status = :status ORDER BY attempts ASC, created_at ASC LIMIT :limit")
     suspend fun getPending(status: String = "PENDING", limit: Int = 50): List<QueueEntity>
 
     @Update

@@ -10,13 +10,17 @@ import kotlinx.coroutines.tasks.await
 /**
  * Worker that processes queued items and pushes them to Firestore.
  * - Respects authenticated user (retries if not logged in)
- * - Marks queue entries deleted on success
+ * - Tracks attempts and moves to FAILED after max attempts
  */
 class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
 
     private val db = SyncDatabase.getInstance(appContext)
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
+
+    companion object {
+        private const val MAX_ATTEMPTS = 5
+    }
 
     override suspend fun doWork(): Result {
         // Ensure user logged in
@@ -45,14 +49,18 @@ class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
                 }
                 docRef.set(withMeta).await()
 
-                // remove from queue
+                // remove from queue on success
                 db.queueDao().deleteById(entry.id)
 
             } catch (e: Exception) {
-                // revert status to PENDING and continue; WorkManager will backoff
-                val failed = entry.copy(status = QueueStatus.PENDING.name)
+                // increment attempts and decide whether to retry or mark failed
+                val attempts = entry.attempts + 1
+                val newStatus = if (attempts >= MAX_ATTEMPTS) QueueStatus.FAILED.name else QueueStatus.PENDING.name
+                val failed = entry.copy(status = newStatus, attempts = attempts, lastError = e.message ?: "")
                 db.queueDao().update(failed)
-                return Result.retry()
+
+                // If we've exceeded attempts, don't retry the worker (move on). Otherwise ask WorkManager to retry later.
+                return if (attempts >= MAX_ATTEMPTS) Result.success() else Result.retry()
             }
         }
 

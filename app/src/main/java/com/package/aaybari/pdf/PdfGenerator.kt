@@ -25,12 +25,13 @@ object PdfGenerator {
     // Generate a single bill PDF (landscape-like small size). Returns saved File or null on error.
     suspend fun generateBill(context: Context, billNumber: String, dateStr: String, items: List<BillItem>, outputFileName: String): File? {
         return withContext(Dispatchers.IO) {
+            var pdfDocument: PdfDocument? = null
             try {
                 // Use bill size: 8.27" x 5.3" (width x height)
                 val width = (8.27f * POINTS_PER_INCH).toInt()
                 val height = (5.3f * POINTS_PER_INCH).toInt()
 
-                val pdfDocument = PdfDocument()
+                pdfDocument = PdfDocument()
                 val pageInfo = PdfDocument.PageInfo.Builder(width, height, 1).create()
                 val page = pdfDocument.startPage(pageInfo)
                 val canvas = page.canvas
@@ -94,9 +95,14 @@ object PdfGenerator {
 
                 // Barcode at bottom
                 val barcodeBitmap = BarcodeHelper.generateCode128Bitmap(billNumber, 600, 80)
-                if (barcodeBitmap != null) {
+                if (barcodeBitmap != null && barcodeBitmap.width > 0 && barcodeBitmap.height > 0) {
                     val bx = (width - barcodeBitmap.width) / 2
-                    canvas.drawBitmap(barcodeBitmap, bx.toFloat(), y.toFloat(), null)
+                    try {
+                        canvas.drawBitmap(barcodeBitmap, bx.toFloat(), y.toFloat(), null)
+                    } catch (e: Exception) {
+                        // fail gracefully if bitmap draw fails
+                        e.printStackTrace()
+                    }
                 }
 
                 pdfDocument.finishPage(page)
@@ -106,14 +112,19 @@ object PdfGenerator {
                 if (!dir.exists()) dir.mkdirs()
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                 val file = File(dir, "${outputFileName}_$timestamp.pdf")
+
                 FileOutputStream(file).use { fos ->
                     pdfDocument.writeTo(fos)
                 }
-                pdfDocument.close()
+
                 file
             } catch (e: Exception) {
                 e.printStackTrace()
                 null
+            } finally {
+                try {
+                    pdfDocument?.close()
+                } catch (_: Exception) { }
             }
         }
     }
@@ -121,11 +132,12 @@ object PdfGenerator {
     // Generate a paginated ledger (A4). Simple starter implementation.
     suspend fun generateLedger(context: Context, title: String, rows: List<BillItem>, outputFileName: String): File? {
         return withContext(Dispatchers.IO) {
+            var pdfDocument: PdfDocument? = null
             try {
                 val width = (8.27f * POINTS_PER_INCH).toInt()
                 val height = (11.69f * POINTS_PER_INCH).toInt()
 
-                val pdfDocument = PdfDocument()
+                pdfDocument = PdfDocument()
                 val paint = Paint()
                 paint.isAntiAlias = true
 
@@ -189,11 +201,12 @@ object PdfGenerator {
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                 val file = File(dir, "${outputFileName}_$timestamp.pdf")
                 FileOutputStream(file).use { fos -> pdfDocument.writeTo(fos) }
-                pdfDocument.close()
                 file
             } catch (e: Exception) {
                 e.printStackTrace()
                 null
+            } finally {
+                try { pdfDocument?.close() } catch (_: Exception) { }
             }
         }
     }
